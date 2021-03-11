@@ -36,6 +36,8 @@
 #include "ORBVocabulary.h"
 #include "Viewer.h"
 
+#include <unistd.h>
+
 namespace ORB_SLAM2
 {
 
@@ -70,12 +72,15 @@ public:
     // Input image: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
     // Input depthmap: Float (CV_32F).
     // Returns the camera pose (empty if tracking fails).
-    cv::Mat TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp);
+	cv::Mat TrackRGBD(const cv::Mat& im, const cv::Mat& depthmap, const cv::Mat& depthUncert, const double& timestamp);
 
     // Proccess the given monocular frame
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
     // Returns the camera pose (empty if tracking fails).
-    cv::Mat TrackMonocular(const cv::Mat &im, const double &timestamp);
+	cv::Mat TrackMonocular(const cv::Mat& im,
+		const double& timestamp,
+		const vector<double>& vdGroundtruth,
+		const vector<double>& vdUncertinty);
 
     // This stops local mapping thread (map building) and performs only camera tracking.
     void ActivateLocalizationMode();

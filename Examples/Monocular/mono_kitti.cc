@@ -28,17 +28,21 @@
 #include<opencv2/core/core.hpp>
 
 #include"System.h"
+#include "Converter.h"
 
 using namespace std;
 
 void LoadImages(const string &strSequence, vector<string> &vstrImageFilenames,
                 vector<double> &vTimestamps);
 
+void LoadGroundtruth(const string &strPathToGroundtruth, vector<vector<double>> &vdGroundtruth);
+void LoadUncertainty(const string &strPathToUncertainty, vector<vector<double>> &vdUncertainty);
+
 int main(int argc, char **argv)
 {
-    if(argc != 4)
+    if(argc != 6)
     {
-        cerr << endl << "Usage: ./mono_kitti path_to_vocabulary path_to_settings path_to_sequence" << endl;
+        cerr << endl << "Usage: ./mono_kitti path_to_vocabulary path_to_settings path_to_sequence path_to_groundtruth path_to_uncertainty" << endl;
         return 1;
     }
 
@@ -46,6 +50,16 @@ int main(int argc, char **argv)
     vector<string> vstrImageFilenames;
     vector<double> vTimestamps;
     LoadImages(string(argv[3]), vstrImageFilenames, vTimestamps);
+
+    // 加载groundtruth和不确定性，记录了上一帧到当前帧的位姿变换。第一帧的内容全为零
+    cout << "开始加载GT和Uncertainty" << endl;
+    vector<vector<double>> vvdGroundtruths;
+    LoadGroundtruth(string(argv[4]), vvdGroundtruths);
+    vector<vector<double>> vvdUncertainties;
+    LoadUncertainty(string(argv[5]), vvdUncertainties);
+
+    assert(vvdGroundtruths.size() == vvdUncertainties.size());
+    assert(vvdGroundtruths.size() == vstrImageFilenames.size());
 
     int nImages = vstrImageFilenames.size();
 
@@ -65,8 +79,10 @@ int main(int argc, char **argv)
     for(int ni=0; ni<nImages; ni++)
     {
         // Read image from file
-        im = cv::imread(vstrImageFilenames[ni],CV_LOAD_IMAGE_UNCHANGED);
+        im = cv::imread(vstrImageFilenames[ni],cv::IMREAD_UNCHANGED);
         double tframe = vTimestamps[ni];
+        vector<double> vdGroundtruth = vvdGroundtruths[ni];
+        vector<double> vdUncertainty = vvdUncertainties[ni];
 
         if(im.empty())
         {
@@ -81,7 +97,7 @@ int main(int argc, char **argv)
 #endif
 
         // Pass the image to the SLAM system
-        SLAM.TrackMonocular(im,tframe);
+		SLAM.TrackMonocular(im, tframe, vdGroundtruth, vdUncertainty);
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -143,7 +159,7 @@ void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilena
         }
     }
 
-    string strPrefixLeft = strPathToSequence + "/image_0/";
+    string strPrefixLeft = strPathToSequence + "/image_2/";
 
     const int nTimes = vTimestamps.size();
     vstrImageFilenames.resize(nTimes);
@@ -154,4 +170,55 @@ void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilena
         ss << setfill('0') << setw(6) << i;
         vstrImageFilenames[i] = strPrefixLeft + ss.str() + ".png";
     }
+}
+
+void LoadGroundtruth(const string &strPathToGroundtruth, vector<vector<double>> &vdGroundtruth)
+{
+	vdGroundtruth.emplace_back(vector<double>(6,0));
+
+	ifstream fGroundtruth;
+	fGroundtruth.open(strPathToGroundtruth);
+
+	while(!fGroundtruth.eof())
+	{
+		vector<double> v;
+
+		string s;
+		getline(fGroundtruth,s);
+
+		stringstream ss(s);
+
+		double x;
+		while (ss >> x)
+			v.push_back(x);
+		vdGroundtruth.push_back(v);
+	}
+
+//	for (auto i : vdGroundtruth[1])
+//	{
+//		cout << i << endl;
+//	}
+}
+
+void LoadUncertainty(const string &strPathToUncertainty, vector<vector<double>> &vdUncertainty)
+{
+	vdUncertainty.emplace_back(vector<double>(6,0));
+
+	ifstream fUncertainty;
+	fUncertainty.open(strPathToUncertainty);
+
+	while(!fUncertainty.eof())
+	{
+		vector<double> v;
+
+		string s;
+		getline(fUncertainty,s);
+
+		stringstream ss(s);
+
+		double x;
+		while (ss >> x)
+			v.push_back(x);
+		vdUncertainty.push_back(v);
+	}
 }

@@ -236,7 +236,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 
 }
 
-int Optimizer::PoseOptimization(Frame *pFrame)
+int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
 {
     g2o::SparseOptimizer optimizer;
     g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
@@ -283,6 +283,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
         if(pMP)
         {
             // Monocular observation
+            // 由于我们使用了稠密的深度图，大部分的KeyPoint都是双目观测
             if(pFrame->mvuRight[i]<0)
             {
                 nInitialCorrespondences++;
@@ -291,13 +292,16 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 Eigen::Matrix<double,2,1> obs;
                 const cv::KeyPoint &kpUn = pFrame->mvKeysUn[i];
                 obs << kpUn.pt.x, kpUn.pt.y;
-
+                // 这个是一元边，在motion-only BA中我们不优化Map Point的位置，所以只需要一元边即可
                 g2o::EdgeSE3ProjectXYZOnlyPose* e = new g2o::EdgeSE3ProjectXYZOnlyPose();
 
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
-                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+//                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+				// @nxy 设置信息矩阵为深度不确定性的倒数（我们提前用python计算了倒数）
+				// KITTI数据集似乎不用考虑矫正
+				e->setInformation(Eigen::Matrix2d::Identity()*pImDepthUncert->at<float>(kpUn.pt.x, kpUn.pt.y));
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
@@ -328,12 +332,14 @@ int Optimizer::PoseOptimization(Frame *pFrame)
                 const float &kp_ur = pFrame->mvuRight[i];
                 obs << kpUn.pt.x, kpUn.pt.y, kp_ur;
 
+                // 这里用的是Stereo的一元边，所以观测中有kp_ur（右目观测的横坐标，没有纵坐标是因为左目与右目同一观测的纵坐标相同）
                 g2o::EdgeStereoSE3ProjectXYZOnlyPose* e = new g2o::EdgeStereoSE3ProjectXYZOnlyPose();
 
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
                 Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;
+//                cout << "第" << i <<"个KeyPoint的信息矩阵是" << invSigma2 << endl;
                 e->setInformation(Info);
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;

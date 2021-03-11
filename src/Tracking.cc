@@ -22,6 +22,7 @@
 #include "Tracking.h"
 
 #include<opencv2/core/core.hpp>
+#include <opencv2/core/eigen.hpp>
 #include<opencv2/features2d/features2d.hpp>
 
 #include"ORBmatcher.h"
@@ -34,6 +35,7 @@
 #include"PnPsolver.h"
 
 #include<iostream>
+#include <numeric>
 
 #include<mutex>
 
@@ -204,10 +206,11 @@ cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRe
 }
 
 
-cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp)
+cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const cv::Mat &imDU, const double &timestamp)
 {
     mImGray = imRGB;
     cv::Mat imDepth = imD;
+    cv::Mat imDepthUncert = imDU;
 
     if(mImGray.channels()==3)
     {
@@ -225,17 +228,20 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const d
     }
 
     if((fabs(mDepthMapFactor-1.0f)>1e-5) || imDepth.type()!=CV_32F)
-        imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);
-
+        imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);	// 将深度的单位从米转换为像素
+	imDepthUncert.convertTo(imDepthUncert, CV_32F, 1.0/255); // 将不确定性缩放到[0,1]
+    this->mImCurrentFrameDepthUncert = imDepthUncert;
     mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
-
     Track();
 
     return mCurrentFrame.mTcw.clone();
 }
 
 
-cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
+cv::Mat Tracking::GrabImageMonocular(const cv::Mat& im,
+	const double& timestamp,
+	const vector<double>& vdGroundtruth,
+	const vector<double>& vdUncertainty)
 {
     mImGray = im;
 
@@ -255,9 +261,27 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
     }
 
     if(mState==NOT_INITIALIZED || mState==NO_IMAGES_YET)
-        mCurrentFrame = Frame(mImGray,timestamp,mpIniORBextractor,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+        mCurrentFrame = Frame(mImGray,
+			timestamp,
+			mpIniORBextractor,
+			mpORBVocabulary,
+			mK,
+			mDistCoef,
+			mbf,
+			mThDepth,
+			vdGroundtruth,
+			vdUncertainty);
     else
-        mCurrentFrame = Frame(mImGray,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+        mCurrentFrame = Frame(mImGray,
+			timestamp,
+			mpORBextractorLeft,
+			mpORBVocabulary,
+			mK,
+			mDistCoef,
+			mbf,
+			mThDepth,
+			vdGroundtruth,
+			vdUncertainty);
 
     Track();
 
@@ -310,6 +334,33 @@ void Tracking::Track()
                 }
                 else
                 {
+					// 速度值设置为模型预测的结果
+//					vector<double> transQuat = mCurrentFrame.mvdGroundtruth;
+//					Eigen::Quaterniond q(transQuat[6], transQuat[3], transQuat[4], transQuat[5]);
+//					Eigen::Matrix3d R = q.normalized().toRotationMatrix();
+//					Eigen::Vector3d t(transQuat[0], transQuat[1], transQuat[2]);
+//					t *= this->mdScale;	// 从实验结果上看，这个尺度是有问题的
+//					Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
+//					T.block(0, 0, 3, 3) = R;
+//					T.block(0, 3, 3, 1) = t;
+
+					// 这里应当要取逆，因为TrackWithMotionModel中用mVelocity*LastFrameTcw
+//					T = T.inverse();
+//				cout << "R:" << endl;
+//				cout << R << endl;
+//				cout << "t:" << endl;
+//				cout << t << endl;
+//				cout << "T:" << endl;
+//				cout << T << endl;
+
+//					cv::eigen2cv(T, mVelocity);
+//					mVelocity.convertTo(mVelocity, 5);
+//					cout << mVelocity << endl;
+//					cout << t[0] << " " << t[1] << " " << t[2] << endl;
+					// 设置位移为groundtruth
+//					mVelocity.at<double>(0, 3) = t[0];
+//					mVelocity.at<double>(1, 3) = t[1];
+//					mVelocity.at<double>(2, 3) = t[2];
                     bOK = TrackWithMotionModel();
                     if(!bOK)
                         bOK = TrackReferenceKeyFrame();
@@ -562,9 +613,9 @@ void Tracking::StereoInitialization()
 
 void Tracking::MonocularInitialization()
 {
-
     if(!mpInitializer)
     {
+//		cout << "初始化第一帧" << endl;
         // Set Reference Frame
         if(mCurrentFrame.mvKeys.size()>100)
         {
@@ -586,6 +637,7 @@ void Tracking::MonocularInitialization()
     }
     else
     {
+//		cout << "初始化第二帧" << endl;
         // Try to initialize
         if((int)mCurrentFrame.mvKeys.size()<=100)
         {
@@ -594,10 +646,13 @@ void Tracking::MonocularInitialization()
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
             return;
         }
+//        cout << "1" << endl;
 
         // Find correspondences
         ORBmatcher matcher(0.9,true);
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
+
+//        cout << "2" << endl;
 
         // Check if there are enough correspondences
         if(nmatches<100)
@@ -606,6 +661,8 @@ void Tracking::MonocularInitialization()
             mpInitializer = static_cast<Initializer*>(NULL);
             return;
         }
+
+//		cout << "3" << endl;
 
         cv::Mat Rcw; // Current Camera Rotation
         cv::Mat tcw; // Current Camera Translation
@@ -622,6 +679,8 @@ void Tracking::MonocularInitialization()
                 }
             }
 
+//            cout << "4" << endl;
+
             // Set Frame Poses
             mInitialFrame.SetPose(cv::Mat::eye(4,4,CV_32F));
             cv::Mat Tcw = cv::Mat::eye(4,4,CV_32F);
@@ -629,8 +688,11 @@ void Tracking::MonocularInitialization()
             tcw.copyTo(Tcw.rowRange(0,3).col(3));
             mCurrentFrame.SetPose(Tcw);
 
+            // @nxy ORB在这个函数中进行尺度的归一化
+//            cout << "开始尺度归一化" << endl;
             CreateInitialMapMonocular();
         }
+//        cout << "5" << endl;
     }
 }
 
@@ -697,8 +759,26 @@ void Tracking::CreateInitialMapMonocular()
     }
 
     // Scale initial baseline
+    // @nxy 在这里记录GT和ORB之间的尺度因子，存放在Tracking类中
     cv::Mat Tc2w = pKFcur->GetPose();
     Tc2w.col(3).rowRange(0,3) = Tc2w.col(3).rowRange(0,3)*invMedianDepth;
+
+    double sumORB = cv::sum(Tc2w.col(3).rowRange(0,3))[0];
+    double sumGT = accumulate(mCurrentFrame.mvdGroundtruth.begin(), mCurrentFrame.mvdGroundtruth.begin()+3, 0.0f);
+	this->mdScale = sumORB / sumGT;
+//	this->mdScale = Tc2w.at<double>(2, 3) / mCurrentFrame.mvdGroundtruth[2];
+	cout << "记录初始化尺度：" << this->mdScale << endl;
+
+	cout << "Tc2w:" << endl;
+	cout << Tc2w << endl;
+
+	Eigen::Matrix3d R = Eigen::Quaterniond(mCurrentFrame.mvdGroundtruth[6], mCurrentFrame.mvdGroundtruth[3], mCurrentFrame.mvdGroundtruth[4], mCurrentFrame.mvdGroundtruth[5]).normalized().toRotationMatrix();
+	cout << "R:" << endl;
+	cout << R << endl;
+
+	cout << "t:" << endl;
+	cout << mCurrentFrame.mvdGroundtruth[0] << " " << mCurrentFrame.mvdGroundtruth[1] << " " << mCurrentFrame.mvdGroundtruth[2] << endl;
+
     pKFcur->SetPose(Tc2w);
 
     // Scale points
@@ -772,7 +852,7 @@ bool Tracking::TrackReferenceKeyFrame()
     mCurrentFrame.mvpMapPoints = vpMapPointMatches;
     mCurrentFrame.SetPose(mLastFrame.mTcw);
 
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    Optimizer::PoseOptimization(&mCurrentFrame, &this->mImCurrentFrameDepthUncert);
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -872,7 +952,7 @@ bool Tracking::TrackWithMotionModel()
     // Create "visual odometry" points if in Localization Mode
     UpdateLastFrame();
 
-    mCurrentFrame.SetPose(mVelocity*mLastFrame.mTcw);
+    mCurrentFrame.SetPose(mVelocity*mLastFrame.mTcw);	// TODO 换成我们预测的位姿
 
     fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
 
@@ -895,7 +975,7 @@ bool Tracking::TrackWithMotionModel()
         return false;
 
     // Optimize frame pose with all matches
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    Optimizer::PoseOptimization(&mCurrentFrame, &mImCurrentFrameDepthUncert);
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -937,7 +1017,7 @@ bool Tracking::TrackLocalMap()
     SearchLocalPoints();
 
     // Optimize Pose
-    Optimizer::PoseOptimization(&mCurrentFrame);
+    Optimizer::PoseOptimization(&mCurrentFrame, &mImCurrentFrameDepthUncert);
     mnMatchesInliers = 0;
 
     // Update MapPoints Statistics
@@ -1340,6 +1420,7 @@ void Tracking::UpdateLocalKeyFrames()
 
 bool Tracking::Relocalization()
 {
+    return false;   // by NXY，关闭重定位
     // Compute Bag of Words Vector
     mCurrentFrame.ComputeBoW();
 
@@ -1437,7 +1518,7 @@ bool Tracking::Relocalization()
                         mCurrentFrame.mvpMapPoints[j]=NULL;
                 }
 
-                int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                int nGood = Optimizer::PoseOptimization(&mCurrentFrame, nullptr);
 
                 if(nGood<10)
                     continue;
@@ -1453,7 +1534,7 @@ bool Tracking::Relocalization()
 
                     if(nadditional+nGood>=50)
                     {
-                        nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                        nGood = Optimizer::PoseOptimization(&mCurrentFrame, nullptr);
 
                         // If many inliers but still not enough, search by projection again in a narrower window
                         // the camera has been already optimized with many points
@@ -1468,7 +1549,7 @@ bool Tracking::Relocalization()
                             // Final optimization
                             if(nGood+nadditional>=50)
                             {
-                                nGood = Optimizer::PoseOptimization(&mCurrentFrame);
+                                nGood = Optimizer::PoseOptimization(&mCurrentFrame, nullptr);
 
                                 for(int io =0; io<mCurrentFrame.N; io++)
                                     if(mCurrentFrame.mvbOutlier[io])

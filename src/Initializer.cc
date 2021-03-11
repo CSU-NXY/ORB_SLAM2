@@ -44,6 +44,7 @@ Initializer::Initializer(const Frame &ReferenceFrame, float sigma, int iteration
 bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatches12, cv::Mat &R21, cv::Mat &t21,
                              vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated)
 {
+//	cout << "进入Initialize函数" << endl;
     // Fill structures with current keypoints and matches with reference frame
     // Reference Frame: 1, Current Frame: 2
     mvKeys2 = CurrentFrame.mvKeysUn;
@@ -62,6 +63,8 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
             mvbMatched1[i]=false;
     }
 
+//    cout << "1" << endl;
+
     const int N = mvMatches12.size();
 
     // Indices for minimum set selection
@@ -73,6 +76,8 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     {
         vAllIndices.push_back(i);
     }
+
+//	cout << "2" << endl;
 
     // Generate sets of 8 points for each RANSAC iteration
     mvSets = vector< vector<size_t> >(mMaxIterations,vector<size_t>(8,0));
@@ -96,6 +101,8 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
         }
     }
 
+//	cout << "3" << endl;
+
     // Launch threads to compute in parallel a fundamental matrix and a homography
     vector<bool> vbMatchesInliersH, vbMatchesInliersF;
     float SH, SF;
@@ -108,14 +115,22 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     threadH.join();
     threadF.join();
 
+//	cout << "4" << endl;
+
     // Compute ratio of scores
     float RH = SH/(SH+SF);
 
     // Try to reconstruct from homography or fundamental depending on the ratio (0.40-0.45)
     if(RH>0.40)
-        return ReconstructH(vbMatchesInliersH,H,mK,R21,t21,vP3D,vbTriangulated,1.0,50);
+	{
+//		cout << "H" << endl;
+		return ReconstructH(vbMatchesInliersH, H, mK, R21, t21, vP3D, vbTriangulated, 1.0, 50);
+	}
     else //if(pF_HF>0.6)
-        return ReconstructF(vbMatchesInliersF,F,mK,R21,t21,vP3D,vbTriangulated,1.0,50);
+	{
+//    	cout << "F" << endl;
+		return ReconstructF(vbMatchesInliersF, F, mK, R21, t21, vP3D, vbTriangulated, 1.0, 50);
+	}
 
     return false;
 }
@@ -470,10 +485,13 @@ float Initializer::CheckFundamental(const cv::Mat &F21, vector<bool> &vbMatchesI
 bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv::Mat &K,
                             cv::Mat &R21, cv::Mat &t21, vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated, float minParallax, int minTriangulated)
 {
+//	cout << "进入F" << endl;
     int N=0;
     for(size_t i=0, iend = vbMatchesInliers.size() ; i<iend; i++)
         if(vbMatchesInliers[i])
             N++;
+
+//	cout << "1" << endl;
 
     // Compute Essential Matrix from Fundamental Matrix
     cv::Mat E21 = K.t()*F21*K;
@@ -502,6 +520,8 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
     t21 = cv::Mat();
 
     int nMinGood = max(static_cast<int>(0.9*N),minTriangulated);
+
+//	cout << "2" << endl;
 
     int nsimilar = 0;
     if(nGood1>0.7*maxGood)
@@ -565,6 +585,7 @@ bool Initializer::ReconstructF(vector<bool> &vbMatchesInliers, cv::Mat &F21, cv:
             return true;
         }
     }
+//	cout << "3" << endl;
 
     return false;
 }

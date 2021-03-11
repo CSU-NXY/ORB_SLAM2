@@ -122,7 +122,6 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 {
     // Frame ID
     mnId=nNextId++;
-
     // Scale Level Info
     mnScaleLevels = mpORBextractorLeft->GetLevels();
     mfScaleFactor = mpORBextractorLeft->GetScaleFactor();    
@@ -131,19 +130,15 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
     mvInvScaleFactors = mpORBextractorLeft->GetInverseScaleFactors();
     mvLevelSigma2 = mpORBextractorLeft->GetScaleSigmaSquares();
     mvInvLevelSigma2 = mpORBextractorLeft->GetInverseScaleSigmaSquares();
-
     // ORB extraction
     ExtractORB(0,imGray);
-
     N = mvKeys.size();
 
     if(mvKeys.empty())
         return;
 
     UndistortKeyPoints();
-
     ComputeStereoFromRGBD(imDepth);
-
     mvpMapPoints = vector<MapPoint*>(N,static_cast<MapPoint*>(NULL));
     mvbOutlier = vector<bool>(N,false);
 
@@ -171,9 +166,18 @@ Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeSt
 }
 
 
-Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
+Frame::Frame(const cv::Mat& imGray,
+    const double& timeStamp,
+    ORBextractor* extractor,
+    ORBVocabulary* voc,
+    cv::Mat& K,
+    cv::Mat& distCoef,
+    const float& bf,
+    const float& thDepth,
+    const vector<double>& vdGroundtruth,
+    const vector<double>& vdUncertainty)
     :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
+     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth), mvdGroundtruth(vdGroundtruth), mvdUncertainty(vdUncertainty)
 {
     // Frame ID
     mnId=nNextId++;
@@ -480,6 +484,7 @@ void Frame::ComputeStereoMatches()
 
     const int Nr = mvKeysRight.size();
 
+    // 把右图关键点存入vRowIndices对应的行中，且设定误差范围r
     for(int iR=0; iR<Nr; iR++)
     {
         const cv::KeyPoint &kp = mvKeysRight[iR];
@@ -508,6 +513,7 @@ void Frame::ComputeStereoMatches()
         const float &vL = kpL.pt.y;
         const float &uL = kpL.pt.x;
 
+        // 取出vRowIndices对应行的关键点，作为candidate进行匹配
         const vector<size_t> &vCandidates = vRowIndices[vL];
 
         if(vCandidates.empty())
@@ -548,7 +554,7 @@ void Frame::ComputeStereoMatches()
             }
         }
 
-        // Subpixel match by correlation
+        // Subpixel match by correlation 见论文，避免离散数值带来的误差
         if(bestDist<thOrbDist)
         {
             // coordinates in image pyramid at keypoint scale
@@ -623,6 +629,7 @@ void Frame::ComputeStereoMatches()
         }
     }
 
+    // 剔除outliers
     sort(vDistIdx.begin(),vDistIdx.end());
     const float median = vDistIdx[vDistIdx.size()/2].first;
     const float thDist = 1.5f*1.4f*median;

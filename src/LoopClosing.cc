@@ -102,6 +102,7 @@ bool LoopClosing::CheckNewKeyFrames()
 
 bool LoopClosing::DetectLoop()
 {
+    return false;   // by NXY，关闭回环检测
     {
         unique_lock<mutex> lock(mMutexLoopQueue);
         mpCurrentKF = mlpLoopKeyFrameQueue.front();

@@ -25,6 +25,9 @@
 #include <thread>
 #include <pangolin/pangolin.h>
 #include <iomanip>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 namespace ORB_SLAM2
 {
@@ -50,6 +53,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << "RGB-D" << endl;
 
     //Check settings file
+    cout << "打开配置文件" << strSettingsFile << endl;
     cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {
@@ -164,7 +168,10 @@ cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const
     return Tcw;
 }
 
-cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const double &timestamp)
+cv::Mat System::TrackRGBD(const cv::Mat& im,
+	const cv::Mat& depthmap,
+	const cv::Mat& depthUncert,
+	const double& timestamp)
 {
     if(mSensor!=RGBD)
     {
@@ -205,8 +212,7 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
         mbReset = false;
     }
     }
-
-    cv::Mat Tcw = mpTracker->GrabImageRGBD(im,depthmap,timestamp);
+    cv::Mat Tcw = mpTracker->GrabImageRGBD(im,depthmap, depthUncert,timestamp);
 
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;
@@ -215,7 +221,10 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
     return Tcw;
 }
 
-cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
+cv::Mat System::TrackMonocular(const cv::Mat& im,
+	const double& timestamp,
+	const vector<double>& vdGroundtruth,
+	const vector<double>& vdUncertinty)
 {
     if(mSensor!=MONOCULAR)
     {
@@ -257,7 +266,7 @@ cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
     }
     }
 
-    cv::Mat Tcw = mpTracker->GrabImageMonocular(im,timestamp);
+    cv::Mat Tcw = mpTracker->GrabImageMonocular(im, timestamp, vdGroundtruth, vdUncertinty);
 
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;

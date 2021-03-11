@@ -22,3 +22,8 @@ build/
 *~
 lib/
 
+.vscode/
+.idea/
+
+.ipynb_checkpoints/
+cmake-build-debug/
