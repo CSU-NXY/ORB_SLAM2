@@ -206,7 +206,12 @@ cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRe
 }
 
 
-cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const cv::Mat &imDU, const double &timestamp)
+cv::Mat Tracking::GrabImageRGBD(const cv::Mat& imRGB,
+	const cv::Mat& imD,
+	const cv::Mat& imDU,
+	const double& timestamp,
+	vector<vector<double>>& vvdPoses,
+	vector<vector<double>>& vvdPoseUncerties)
 {
     mImGray = imRGB;
     cv::Mat imDepth = imD;
@@ -231,7 +236,17 @@ cv::Mat Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const c
         imDepth.convertTo(imDepth,CV_32F,mDepthMapFactor);	// 将深度的单位从米转换为像素
 	imDepthUncert.convertTo(imDepthUncert, CV_32F, 1.0/255); // 将不确定性缩放到[0,1]
     this->mImCurrentFrameDepthUncert = imDepthUncert;
-    mCurrentFrame = Frame(mImGray,imDepth,timestamp,mpORBextractorLeft,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth);
+    mCurrentFrame = Frame(mImGray,
+		imDepth,
+		timestamp,
+		mpORBextractorLeft,
+		mpORBVocabulary,
+		mK,
+		mDistCoef,
+		mbf,
+		mThDepth,
+		vvdPoses,
+		vvdPoseUncerties);
     Track();
 
     return mCurrentFrame.mTcw.clone();
@@ -335,11 +350,11 @@ void Tracking::Track()
                 else
                 {
 					// 速度值设置为模型预测的结果
-//					vector<double> transQuat = mCurrentFrame.mvdGroundtruth;
+//					vector<double> transQuat = mCurrentFrame.mvvdPoses;
 //					Eigen::Quaterniond q(transQuat[6], transQuat[3], transQuat[4], transQuat[5]);
 //					Eigen::Matrix3d R = q.normalized().toRotationMatrix();
 //					Eigen::Vector3d t(transQuat[0], transQuat[1], transQuat[2]);
-//					t *= this->mdScale;	// 从实验结果上看，这个尺度是有问题的
+//					t *= 2.313066;	// 从实验结果上看，这个尺度是有问题的
 //					Eigen::Matrix4d T = Eigen::Matrix4d::Identity();
 //					T.block(0, 0, 3, 3) = R;
 //					T.block(0, 3, 3, 1) = t;
@@ -356,11 +371,11 @@ void Tracking::Track()
 //					cv::eigen2cv(T, mVelocity);
 //					mVelocity.convertTo(mVelocity, 5);
 //					cout << mVelocity << endl;
-//					cout << t[0] << " " << t[1] << " " << t[2] << endl;
-					// 设置位移为groundtruth
-//					mVelocity.at<double>(0, 3) = t[0];
-//					mVelocity.at<double>(1, 3) = t[1];
-//					mVelocity.at<double>(2, 3) = t[2];
+//					cout << T(0,3) << " " << T(1,3) << " " << T(2,3) << endl;
+//					// 设置位移为groundtruth
+//					mVelocity.at<double>(0, 3) = T(0,3);
+//					mVelocity.at<double>(1, 3) = T(1,3);
+//					mVelocity.at<double>(2, 3) = T(2,3);
                     bOK = TrackWithMotionModel();
                     if(!bOK)
                         bOK = TrackReferenceKeyFrame();
@@ -763,21 +778,23 @@ void Tracking::CreateInitialMapMonocular()
     cv::Mat Tc2w = pKFcur->GetPose();
     Tc2w.col(3).rowRange(0,3) = Tc2w.col(3).rowRange(0,3)*invMedianDepth;
 
+	/* 计算尺度因子，双目、RGBD初始化的时候没有调用本函数
     double sumORB = cv::sum(Tc2w.col(3).rowRange(0,3))[0];
-    double sumGT = accumulate(mCurrentFrame.mvdGroundtruth.begin(), mCurrentFrame.mvdGroundtruth.begin()+3, 0.0f);
+    double sumGT = accumulate(mCurrentFrame.mvdPose.begin(), mCurrentFrame.mvdPose.begin()+3, 0.0f);
 	this->mdScale = sumORB / sumGT;
-//	this->mdScale = Tc2w.at<double>(2, 3) / mCurrentFrame.mvdGroundtruth[2];
+	this->mdScale = Tc2w.at<double>(2, 3) / mCurrentFrame.mvvdPoses[2];
 	cout << "记录初始化尺度：" << this->mdScale << endl;
 
 	cout << "Tc2w:" << endl;
 	cout << Tc2w << endl;
 
-	Eigen::Matrix3d R = Eigen::Quaterniond(mCurrentFrame.mvdGroundtruth[6], mCurrentFrame.mvdGroundtruth[3], mCurrentFrame.mvdGroundtruth[4], mCurrentFrame.mvdGroundtruth[5]).normalized().toRotationMatrix();
+	Eigen::Matrix3d R = Eigen::Quaterniond(mCurrentFrame.mvdPose[6], mCurrentFrame.mvdPose[3], mCurrentFrame.mvdPose[4], mCurrentFrame.mvdPose[5]).normalized().toRotationMatrix();
 	cout << "R:" << endl;
 	cout << R << endl;
 
 	cout << "t:" << endl;
-	cout << mCurrentFrame.mvdGroundtruth[0] << " " << mCurrentFrame.mvdGroundtruth[1] << " " << mCurrentFrame.mvdGroundtruth[2] << endl;
+	cout << mCurrentFrame.mvdPose[0] << " " << mCurrentFrame.mvdPose[1] << " " << mCurrentFrame.mvdPose[2] << endl;
+	 */
 
     pKFcur->SetPose(Tc2w);
 
@@ -852,7 +869,7 @@ bool Tracking::TrackReferenceKeyFrame()
     mCurrentFrame.mvpMapPoints = vpMapPointMatches;
     mCurrentFrame.SetPose(mLastFrame.mTcw);
 
-    Optimizer::PoseOptimization(&mCurrentFrame, &this->mImCurrentFrameDepthUncert);
+    Optimizer::PoseOptimization(&mCurrentFrame, &(mpvImDepthUncertImages->at(mCurrentFrame.mnId)));
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -952,6 +969,8 @@ bool Tracking::TrackWithMotionModel()
     // Create "visual odometry" points if in Localization Mode
     UpdateLastFrame();
 
+    // T30 = T32 @ T20
+    // 运动模型假设T32=T21
     mCurrentFrame.SetPose(mVelocity*mLastFrame.mTcw);	// TODO 换成我们预测的位姿
 
     fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
@@ -975,7 +994,8 @@ bool Tracking::TrackWithMotionModel()
         return false;
 
     // Optimize frame pose with all matches
-    Optimizer::PoseOptimization(&mCurrentFrame, &mImCurrentFrameDepthUncert);
+//    Optimizer::PoseOptimization(&mCurrentFrame, &mImCurrentFrameDepthUncert);
+	Optimizer::PoseOptimization(&mCurrentFrame, &(mpvImDepthUncertImages->at(mCurrentFrame.mnId)));
 
     // Discard outliers
     int nmatchesMap = 0;
@@ -1017,7 +1037,7 @@ bool Tracking::TrackLocalMap()
     SearchLocalPoints();
 
     // Optimize Pose
-    Optimizer::PoseOptimization(&mCurrentFrame, &mImCurrentFrameDepthUncert);
+    Optimizer::PoseOptimization(&mCurrentFrame, &(mpvImDepthUncertImages->at(mCurrentFrame.mnId)));
     mnMatchesInliers = 0;
 
     // Update MapPoints Statistics

@@ -116,9 +116,20 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     AssignFeaturesToGrid();
 }
 
-Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
-    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth)
+Frame::Frame(const cv::Mat& imGray,
+    const cv::Mat& imDepth,
+    const double& timeStamp,
+    ORBextractor* extractor,
+    ORBVocabulary* voc,
+    cv::Mat& K,
+    cv::Mat& distCoef,
+    const float& bf,
+    const float& thDepth,
+    vector<vector<double>>& vvdPoses,
+    vector<vector<double>>& vvdPoseUncerties)
+    : mpORBvocabulary(voc), mpORBextractorLeft(extractor), mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+      mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth), mvvdPoses(vvdPoses),
+      mvvdPoseUncerties(vvdPoseUncerties)
 {
     // Frame ID
     mnId=nNextId++;
@@ -176,8 +187,8 @@ Frame::Frame(const cv::Mat& imGray,
     const float& thDepth,
     const vector<double>& vdGroundtruth,
     const vector<double>& vdUncertainty)
-    :mpORBvocabulary(voc),mpORBextractorLeft(extractor),mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
-     mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth), mvdGroundtruth(vdGroundtruth), mvdUncertainty(vdUncertainty)
+    : mpORBvocabulary(voc), mpORBextractorLeft(extractor), mpORBextractorRight(static_cast<ORBextractor*>(NULL)),
+      mTimeStamp(timeStamp), mK(K.clone()), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth), mvdPose(vdGroundtruth), mvdPoseUncert(vdUncertainty)
 {
     // Frame ID
     mnId=nNextId++;

@@ -32,7 +32,6 @@
   # b = 0.54 / 80 * d_max
   # d_max = 255
   # bf = b * fx
-#  Camera.bf: 17.69398889
   Camera.bf: 1217.080728
   # Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
   Camera.RGB: 1

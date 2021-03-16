@@ -298,10 +298,14 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
-//                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
 				// @nxy 设置信息矩阵为深度不确定性的倒数（我们提前用python计算了倒数）
+				// 这里是单目部分，不应该修改！！！！！
+				// 我们的深度不确定性是DL模型的不确定性，与ORB-SLAM2三角化得到的深度无关
 				// KITTI数据集似乎不用考虑矫正
-				e->setInformation(Eigen::Matrix2d::Identity()*pImDepthUncert->at<float>(kpUn.pt.x, kpUn.pt.y));
+//				e->setInformation(Eigen::Matrix2d::Identity()*(int)(pImDepthUncert->at<uchar>(kpUn.pt)) / 255.0);
+				// baseline，使用单位矩阵作为信息矩阵。效果也没有发生什么变化
+//				e->setInformation(Eigen::Matrix2d::Identity());
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
@@ -338,9 +342,14 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
-                Eigen::Matrix3d Info = Eigen::Matrix3d::Identity()*invSigma2;
+                // 与单目观测不同，这里的信息矩阵是3d的
+//                e->setInformation(Eigen::Matrix3d::Identity()*invSigma2);
+				// kpUn.pt.x表示的是列
+				// mat.at<type>(row, col)
+				e->setInformation(Eigen::Matrix3d::Identity()*(int)(pImDepthUncert->at<uchar>(kpUn.pt)) / 255.0);
+				// baseline
+//				e->setInformation(Eigen::Matrix3d::Identity());
 //                cout << "第" << i <<"个KeyPoint的信息矩阵是" << invSigma2 << endl;
-                e->setInformation(Info);
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
@@ -456,7 +465,7 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
     return nInitialCorrespondences-nBad;
 }
 
-void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap)
+void Optimizer::LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages)
 {    
     // Local KeyFrames: First Breath Search from Current Keyframe
     list<KeyFrame*> lLocalKeyFrames;
@@ -608,7 +617,14 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
                     e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKFi->mnId)));
                     e->setMeasurement(obs);
                     const float &invSigma2 = pKFi->mvInvLevelSigma2[kpUn.octave];
-                    e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+                    // @nxy 修改信息矩阵
+                    // 原始金字塔模型sigma
+//                    e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+					// 深度不确定性sigma
+					float mysigma = (int)((*pImDepthUncertImages)[pKFi->mnFrameId].at<uchar>(kpUn.pt)) / 255.0;
+					e->setInformation(Eigen::Matrix2d::Identity() * mysigma);
+					// 固定sigma
+//					e->setInformation(Eigen::Matrix2d::Identity());
 
                     g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                     e->setRobustKernel(rk);
@@ -657,6 +673,14 @@ void Optimizer::LocalBundleAdjustment(KeyFrame *pKF, bool* pbStopFlag, Map* pMap
             }
         }
     }
+
+    // @nxy TODO 设置pose vertex之间的Edge
+	for(list<KeyFrame*>::iterator lit=lLocalKeyFrames.begin() , lend=lLocalKeyFrames.end(); lit!=lend; lit++)
+	{
+		// orbslam似乎不会保存普通的frame
+		// 因此可能要把模型预测的所有pose和不确定性都预先传递给tracking对象
+
+	}
 
     if(pbStopFlag)
         if(*pbStopFlag)

@@ -171,7 +171,10 @@ cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const
 cv::Mat System::TrackRGBD(const cv::Mat& im,
 	const cv::Mat& depthmap,
 	const cv::Mat& depthUncert,
-	const double& timestamp)
+	const double& timestamp,
+	vector<vector<double>>& vvdPoses,
+	vector<vector<double>>& vvdPoseUncerties,
+	vector<cv::Mat>& vImDepthUncertImages)
 {
     if(mSensor!=RGBD)
     {
@@ -212,7 +215,8 @@ cv::Mat System::TrackRGBD(const cv::Mat& im,
         mbReset = false;
     }
     }
-    cv::Mat Tcw = mpTracker->GrabImageRGBD(im,depthmap, depthUncert,timestamp);
+    mpTracker->mpvImDepthUncertImages = &vImDepthUncertImages;	// 将所有的深度不确定性传入tracking线程
+    cv::Mat Tcw = mpTracker->GrabImageRGBD(im, depthmap, depthUncert, timestamp, vvdPoses, vvdPoseUncerties);
 
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;
@@ -224,7 +228,8 @@ cv::Mat System::TrackRGBD(const cv::Mat& im,
 cv::Mat System::TrackMonocular(const cv::Mat& im,
 	const double& timestamp,
 	const vector<double>& vdGroundtruth,
-	const vector<double>& vdUncertinty)
+	const vector<double>& vdUncertinty,
+	vector<cv::Mat>& vImDepthUncertainties)
 {
     if(mSensor!=MONOCULAR)
     {
@@ -266,6 +271,7 @@ cv::Mat System::TrackMonocular(const cv::Mat& im,
     }
     }
 
+    mpTracker->mpvImDepthUncertImages = &vImDepthUncertainties;
     cv::Mat Tcw = mpTracker->GrabImageMonocular(im, timestamp, vdGroundtruth, vdUncertinty);
 
     unique_lock<mutex> lock2(mMutexState);
@@ -389,7 +395,7 @@ void System::SaveTrajectoryTUM(const string &filename)
 }
 
 
-void System::SaveKeyFrameTrajectoryTUM(const string &filename)
+void System::SaveKeyFrameTrajectoryTUM(const string &filename, bool saveFrameId)
 {
     cout << endl << "Saving keyframe trajectory to " << filename << " ..." << endl;
 
@@ -423,6 +429,27 @@ void System::SaveKeyFrameTrajectoryTUM(const string &filename)
 
     f.close();
     cout << endl << "trajectory saved!" << endl;
+
+
+	if (saveFrameId)
+	{
+		ofstream f1;
+		f1.open("KeyframeID.txt");
+		f1 << fixed;
+
+		for(size_t i=0; i<vpKFs.size(); i++)
+		{
+			KeyFrame* pKF = vpKFs[i];
+
+			if(pKF->isBad())
+				continue;
+
+			f1 << pKF->mnFrameId << endl;
+		}
+
+		f1.close();
+		cout << endl << "keyframe id saved!" << endl;
+	}
 }
 
 void System::SaveTrajectoryKITTI(const string &filename)

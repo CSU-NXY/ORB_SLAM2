@@ -32,24 +32,25 @@
 
 using namespace std;
 
-void LoadImages(const string &strSequence, vector<string> &vstrImageFilenames,
-                vector<double> &vTimestamps);
+void LoadImages(const string &strSequence, vector<string> &vstrImageFilenames, vector<cv::Mat>& vImDepthUncertImages,
+                vector<double> &vTimestamps, char** argv);
 
 void LoadGroundtruth(const string &strPathToGroundtruth, vector<vector<double>> &vdGroundtruth);
 void LoadUncertainty(const string &strPathToUncertainty, vector<vector<double>> &vdUncertainty);
 
 int main(int argc, char **argv)
 {
-    if(argc != 6)
+    if(argc != 7)
     {
-        cerr << endl << "Usage: ./mono_kitti path_to_vocabulary path_to_settings path_to_sequence path_to_groundtruth path_to_uncertainty" << endl;
+        cerr << endl << "Usage: ./mono_kitti path_to_vocabulary path_to_settings path_to_sequence path_to_groundtruth path_to_uncertainty path_to_depth_uncertainty" << endl;
         return 1;
     }
 
     // Retrieve paths to images
     vector<string> vstrImageFilenames;
     vector<double> vTimestamps;
-    LoadImages(string(argv[3]), vstrImageFilenames, vTimestamps);
+    vector<cv::Mat> vImDepthUncertainties;
+    LoadImages(string(argv[3]), vstrImageFilenames, vImDepthUncertainties, vTimestamps, argv);
 
     // 加载groundtruth和不确定性，记录了上一帧到当前帧的位姿变换。第一帧的内容全为零
     cout << "开始加载GT和Uncertainty" << endl;
@@ -62,6 +63,8 @@ int main(int argc, char **argv)
     assert(vvdGroundtruths.size() == vstrImageFilenames.size());
 
     int nImages = vstrImageFilenames.size();
+
+    cout << vImDepthUncertainties[0] << endl;
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::MONOCULAR,true);
@@ -97,7 +100,7 @@ int main(int argc, char **argv)
 #endif
 
         // Pass the image to the SLAM system
-		SLAM.TrackMonocular(im, tframe, vdGroundtruth, vdUncertainty);
+		SLAM.TrackMonocular(im, tframe, vdGroundtruth, vdUncertainty, vImDepthUncertainties);
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -135,12 +138,13 @@ int main(int argc, char **argv)
     cout << "mean tracking time: " << totaltime/nImages << endl;
 
     // Save camera trajectory
-    SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");    
+    SLAM.SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt", true);
 
     return 0;
 }
 
-void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilenames, vector<double> &vTimestamps)
+void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilenames, vector<cv::Mat>& vImDepthUncertImages,
+	vector<double> &vTimestamps, char** argv)
 {
     ifstream fTimes;
     string strPathTimeFile = strPathToSequence + "/times.txt";
@@ -169,7 +173,10 @@ void LoadImages(const string &strPathToSequence, vector<string> &vstrImageFilena
         stringstream ss;
         ss << setfill('0') << setw(6) << i;
         vstrImageFilenames[i] = strPrefixLeft + ss.str() + ".png";
+        vImDepthUncertImages.push_back(cv::imread(string(argv[6])+"/"+ss.str() + ".png", cv::IMREAD_GRAYSCALE));
     }
+
+    cout << "读取" << vImDepthUncertImages.size() << "张图片" << endl;
 }
 
 void LoadGroundtruth(const string &strPathToGroundtruth, vector<vector<double>> &vdGroundtruth)

@@ -121,7 +121,9 @@ public:
 public:
 
     static long unsigned int nNextId;
+    // 关键帧id
     long unsigned int mnId;
+    // 帧id
     const long unsigned int mnFrameId;
 
     const double mTimeStamp;
@@ -189,8 +191,8 @@ public:
     const cv::Mat mK;
 
     // @nxy
-    vector<double> mvdGroundtruth;
-    vector<double> mvdUncertainty;
+    vector<vector<double>> mvvdPoses;
+    vector<vector<double>> mvvdPoseUncerties;
 
 
     // The following variables need to be accessed trough a mutex to be thread safe.

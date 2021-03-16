@@ -59,7 +59,12 @@ public:
 
     // Preprocess the input and call Track(). Extract features and performs stereo matching.
     cv::Mat GrabImageStereo(const cv::Mat &imRectLeft,const cv::Mat &imRectRight, const double &timestamp);
-    cv::Mat GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const cv::Mat &imDU, const double &timestamp);
+    cv::Mat GrabImageRGBD(const cv::Mat& imRGB,
+		const cv::Mat& imD,
+		const cv::Mat& imDU,
+		const double& timestamp,
+		vector<vector<double>>& vvdPoses,
+		vector<vector<double>>& vvdPoseUncerties);
     cv::Mat GrabImageMonocular(const cv::Mat& im,
 		const double& timestamp,
 		const vector<double>& vdGroundtruth,
@@ -123,6 +128,7 @@ public:
 
 	// @nxy 当前帧的深度不确定性图
 	cv::Mat mImCurrentFrameDepthUncert;
+	vector<cv::Mat> *mpvImDepthUncertImages;
 
 protected:
 

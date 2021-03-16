@@ -52,7 +52,17 @@ public:
     Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth);
 
     // Constructor for RGB-D cameras.
-    Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth);
+	Frame(const cv::Mat& imGray,
+		const cv::Mat& imDepth,
+		const double& timeStamp,
+		ORBextractor* extractor,
+		ORBVocabulary* voc,
+		cv::Mat& K,
+		cv::Mat& distCoef,
+		const float& bf,
+		const float& thDepth,
+		vector<vector<double>>& vvdPoses,
+		vector<vector<double>>& vvdPoseUncerties);
 
     // Constructor for Monocular cameras.
 	Frame(const cv::Mat& imGray,
@@ -197,8 +207,11 @@ public:
     static bool mbInitialComputations;
 
     // @nxy
-    vector<double> mvdGroundtruth;
-    vector<double> mvdUncertainty;
+    vector<vector<double>> mvvdPoses;
+    vector<vector<double>> mvvdPoseUncerties;
+
+    vector<double> mvdPose;
+    vector<double> mvdPoseUncert;
 
 
 private:

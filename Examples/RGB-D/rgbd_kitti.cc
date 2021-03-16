@@ -34,29 +34,49 @@
 
 using namespace std;
 
-void LoadImages(const string &strPathToSequence, const string &strPathToDepth, const string &strPathToDepthUncertainty,
-	vector<string> &vstrImageFilenames, vector<string> &vstrDepthFilenames, vector<string> &vstrDepthUncertFilenames,
-	vector<double> &vTimestamps);
+// TODO 将所有的不确定性都放进内存中。在tracking中建立与上一帧的pose约束，在local mapping中建立一级相邻关键帧的pose约束，加油！
+void LoadImages(const string& strPathToSequence,
+	const string& strPathToDepth,
+	const string& strPathToDepthUncertainty,
+	vector<string>& vstrImageFilenames,
+	vector<string>& vstrDepthFilenames,
+	vector<string>& vstrDepthUncertFilenames,
+	vector<cv::Mat>& vImDepthUncertImages,
+	vector<double>& vTimestamps,
+	char** argv);
+
+void LoadPoseAndPoseUncertainty(const string &strPathToPoseTxt, const string &strPathToPoseUncertainty,
+	vector<vector<double>> &vvdPoses, vector<vector<double>> &vvdPoseUncertainties);
 
 int main(int argc, char **argv)
 {
-	if(argc != 6)
+	if(argc != 8)
 	{
-		cerr << endl << "Usage: ./rgbd_kitti path_to_vocabulary path_to_settings path_to_sequence path_to_predicted_depth path_to_predicted_depth_uncertainty" << endl;
+		cerr << endl <<
+		"Usage: ./rgbd_kitti path_to_vocabulary path_to_settings path_to_sequence path_to_predicted_depth "
+  		"path_to_predicted_depth_uncertainty path_to_pose_txt path_to_pose_uncertainty_txt" << endl;
 		return 1;
 	}
 
 	// Retrieve paths to images
-	vector<string> vstrImageFilenamesRGB;
-	vector<string> vstrImageFilenamesD;
-	vector<string> vstrImageFilenamesDepthUncert;
+	vector<string> vstrImageFilenamesRGB;			// 图像
+	vector<string> vstrImageFilenamesD;				// 深度图
+	vector<string> vstrImageFilenamesDepthUncert;	// 不确定性图
+	vector<cv::Mat> vImDepthUncertImages;			// 不确定性图的容器
 	vector<double> vTimestamps;
 	string strPathToSequence = string(argv[3]);
 	string strPathToPredictedDepth = string(argv[4]);
 	string strPathToPredictedDepthUncertainty = string(argv[5]);
 
 	LoadImages(strPathToSequence, strPathToPredictedDepth, strPathToPredictedDepthUncertainty, vstrImageFilenamesRGB,
-		vstrImageFilenamesD, vstrImageFilenamesDepthUncert, vTimestamps);
+		vstrImageFilenamesD, vstrImageFilenamesDepthUncert, vImDepthUncertImages, vTimestamps, argv);
+
+	// 读取位姿变化和不确定性。记录了上一帧到当前帧的位姿变换。第一帧的内容全为零。
+	vector<vector<double>> vvdPoses;
+	vector<vector<double>> vvdPoseUncertainties;
+	string strPathToPoseTxt = string(argv[6]);
+	string strPathToPoseUncertTxt = string(argv[7]);
+	LoadPoseAndPoseUncertainty(strPathToPoseTxt, strPathToPoseUncertTxt, vvdPoses, vvdPoseUncertainties);
 
 	// Check consistency in the number of images and depthmaps
 	int nImages = vstrImageFilenamesRGB.size();
@@ -89,12 +109,14 @@ int main(int argc, char **argv)
 		// Read image and depthmap from file
 		imRGB = cv::imread(string(argv[3])+vstrImageFilenamesRGB[ni],cv::IMREAD_UNCHANGED);
 		imD = cv::imread(string(argv[4])+"/"+vstrImageFilenamesD[ni],cv::IMREAD_UNCHANGED);
-		imDU = cv::imread(string(argv[5])+"/"+vstrImageFilenamesDepthUncert[ni], cv::IMREAD_UNCHANGED);
+		imDU = vImDepthUncertImages[ni];
+
 		if(ni == 0)
 		{
+			cerr << "注意：现有的深度图和不确定性是来自深度估计任务的，需要被替换成位姿估计任务的估计结果" << endl;
 			cout << "图片的路径是" << string(argv[3])+"/"+vstrImageFilenamesRGB[ni] << endl;
 			cout << "深度图的路径是" << string(argv[4])+"/"+vstrImageFilenamesD[ni] << endl;
-			cout << "深度不确定性的路径是" << string(argv[5])+"/"+vstrImageFilenamesDepthUncert[ni] << endl;
+			cout << "深度不确定性的路径是" << string(argv[5])+"/"+vstrImageFilenamesDepthUncert[ni] << endl << endl;
 		}
 		double tframe = vTimestamps[ni];
 
@@ -112,7 +134,7 @@ int main(int argc, char **argv)
 #endif
 
 		// Pass the image to the SLAM system
-		SLAM.TrackRGBD(imRGB, imD, imDU, tframe);
+		SLAM.TrackRGBD(imRGB, imD, imDU, tframe, vvdPoses, vvdPoseUncertainties, vImDepthUncertImages);
 
 #ifdef COMPILEDWITHC11
 		std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -157,9 +179,15 @@ int main(int argc, char **argv)
 }
 
 
-void LoadImages(const string &strPathToSequence, const string &strPathToDepth, const string &strPathToDepthUncertainty,
-	vector<string> &vstrImageFilenames, vector<string> &vstrDepthFilenames, vector<string> &vstrDepthUncertFilenames,
-	vector<double> &vTimestamps)
+void LoadImages(const string& strPathToSequence,
+	const string& strPathToDepth,
+	const string& strPathToDepthUncertainty,
+	vector<string>& vstrImageFilenames,
+	vector<string>& vstrDepthFilenames,
+	vector<string>& vstrDepthUncertFilenames,
+	vector<cv::Mat>& vImDepthUncertImages,
+	vector<double>& vTimestamps,
+	char** argv)
 {
 	ifstream fTimes;
 	string strPathTimeFile = strPathToSequence + "/times.txt";
@@ -192,6 +220,50 @@ void LoadImages(const string &strPathToSequence, const string &strPathToDepth, c
 		vstrImageFilenames[i] = strPrefixLeft + ss.str() + ".png";
 		vstrDepthFilenames[i] =  ss.str() + ".png";
 		vstrDepthUncertFilenames[i] = ss.str() + ".png";
+		vImDepthUncertImages.push_back(cv::imread(string(argv[5])+"/"+vstrDepthUncertFilenames[i], cv::IMREAD_GRAYSCALE));
 	}
-	cout << "读取文件id完成，共有 " << vstrDepthFilenames.size() << "张图片" << endl;
+	cout << "读取文件完成，共有 " << vstrDepthFilenames.size() << "张图片" << endl;
+}
+
+void LoadPoseAndPoseUncertainty(const string &strPathToPoseTxt, const string &strPathToPoseUncertainty,
+	vector<vector<double>> &vvdPoses, vector<vector<double>> &vvdPoseUncertainties)
+{
+	vvdPoses.emplace_back(vector<double>(6,0));
+	vvdPoseUncertainties.emplace_back(vector<double>(6,0));
+
+	ifstream fPoses, fUncertainty;
+	fPoses.open(strPathToPoseTxt);
+	fUncertainty.open(strPathToPoseUncertainty);
+
+	while(!fPoses.eof())
+	{
+		vector<double> v;
+
+		string s;
+		getline(fPoses, s);
+
+		stringstream ss(s);
+
+		double x;
+		while (ss >> x)
+			v.push_back(x);
+		vvdPoses.push_back(v);
+	}
+
+	while(!fUncertainty.eof())
+	{
+		vector<double> v;
+
+		string s;
+		getline(fUncertainty,s);
+
+		stringstream ss(s);
+
+		double x;
+		while (ss >> x)
+			v.push_back(x);
+		vvdPoseUncertainties.push_back(v);
+	}
+	// 注意要删掉txt文件最后的空行
+	cout << "读取位姿文件完成，共有" << vvdPoses.size() << "行" << endl;
 }

@@ -72,7 +72,13 @@ public:
     // Input image: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
     // Input depthmap: Float (CV_32F).
     // Returns the camera pose (empty if tracking fails).
-	cv::Mat TrackRGBD(const cv::Mat& im, const cv::Mat& depthmap, const cv::Mat& depthUncert, const double& timestamp);
+	cv::Mat TrackRGBD(const cv::Mat& im,
+		const cv::Mat& depthmap,
+		const cv::Mat& depthUncert,
+		const double& timestamp,
+		vector<vector<double>>& vvdPoses,
+		vector<vector<double>>& vvdPoseUncerties,
+		vector<cv::Mat>& vImDepthUncertImages);
 
     // Proccess the given monocular frame
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
@@ -80,7 +86,8 @@ public:
 	cv::Mat TrackMonocular(const cv::Mat& im,
 		const double& timestamp,
 		const vector<double>& vdGroundtruth,
-		const vector<double>& vdUncertinty);
+		const vector<double>& vdUncertinty,
+		vector<cv::Mat>& vImDepthUncertainties);
 
     // This stops local mapping thread (map building) and performs only camera tracking.
     void ActivateLocalizationMode();
@@ -109,7 +116,7 @@ public:
     // This method works for all sensor input.
     // Call first Shutdown()
     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
-    void SaveKeyFrameTrajectoryTUM(const string &filename);
+    void SaveKeyFrameTrajectoryTUM(const string &filename, bool saveFrameId= false);
 
     // Save camera trajectory in the KITTI dataset format.
     // Only for stereo and RGB-D. This method does not work for monocular.

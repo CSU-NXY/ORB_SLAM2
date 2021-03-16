@@ -26,6 +26,9 @@
 #include "KeyFrame.h"
 #include "LoopClosing.h"
 #include "Frame.h"
+#include<opencv2/core/core.hpp>
+#include<opencv2/features2d/features2d.hpp>
+#include "vector"
 
 #include "Thirdparty/g2o/g2o/types/types_seven_dof_expmap.h"
 
@@ -42,7 +45,7 @@ public:
                                  const bool bRobust = true);
     void static GlobalBundleAdjustemnt(Map* pMap, int nIterations=5, bool *pbStopFlag=NULL,
                                        const unsigned long nLoopKF=0, const bool bRobust = true);
-    void static LocalBundleAdjustment(KeyFrame* pKF, bool *pbStopFlag, Map *pMap);
+    void static LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages=nullptr);
     int static PoseOptimization(Frame* pFrame, cv::Mat *pImDepthUncert);
 
     // if bFixScale is true, 6DoF optimization (stereo,rgbd), 7DoF otherwise (mono)
