@@ -37,6 +37,7 @@
 namespace ORB_SLAM2
 {
 
+const double Optimizer::uncertFactor = 30.0074778;
 
 void Optimizer::GlobalBundleAdjustemnt(Map* pMap, int nIterations, bool* pbStopFlag, const unsigned long nLoopKF, const bool bRobust)
 {
@@ -236,7 +237,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 
 }
 
-int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
+int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert, int uncertMode)
 {
     g2o::SparseOptimizer optimizer;
     g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
@@ -298,14 +299,10 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
                 e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(0)));
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
-                e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
-				// @nxy 设置信息矩阵为深度不确定性的倒数（我们提前用python计算了倒数）
+				// @nxy
 				// 这里是单目部分，不应该修改！！！！！
 				// 我们的深度不确定性是DL模型的不确定性，与ORB-SLAM2三角化得到的深度无关
-				// KITTI数据集似乎不用考虑矫正
-//				e->setInformation(Eigen::Matrix2d::Identity()*(int)(pImDepthUncert->at<uchar>(kpUn.pt)) / 255.0);
-				// baseline，使用单位矩阵作为信息矩阵。效果也没有发生什么变化
-//				e->setInformation(Eigen::Matrix2d::Identity());
+				e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
@@ -343,13 +340,14 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
                 e->setMeasurement(obs);
                 const float invSigma2 = pFrame->mvInvLevelSigma2[kpUn.octave];
                 // 与单目观测不同，这里的信息矩阵是3d的
-//                e->setInformation(Eigen::Matrix3d::Identity()*invSigma2);
 				// kpUn.pt.x表示的是列
 				// mat.at<type>(row, col)
-				e->setInformation(Eigen::Matrix3d::Identity()*(int)(pImDepthUncert->at<uchar>(kpUn.pt)) / 255.0);
-				// baseline
-//				e->setInformation(Eigen::Matrix3d::Identity());
-//                cout << "第" << i <<"个KeyPoint的信息矩阵是" << invSigma2 << endl;
+				if(uncertMode==Standard)
+					e->setInformation(Eigen::Matrix3d::Identity()*invSigma2);
+				else if (uncertMode==Same)
+					e->setInformation(Eigen::Matrix3d::Identity());
+				else
+					e->setInformation(Eigen::Matrix3d::Identity()*(int)(pImDepthUncert->at<uchar>(kpUn.pt)) / uncertFactor);
 
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 e->setRobustKernel(rk);
@@ -465,7 +463,8 @@ int Optimizer::PoseOptimization(Frame *pFrame, cv::Mat *pImDepthUncert)
     return nInitialCorrespondences-nBad;
 }
 
-void Optimizer::LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages)
+void Optimizer::LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages,
+	int uncertMode)
 {    
     // Local KeyFrames: First Breath Search from Current Keyframe
     list<KeyFrame*> lLocalKeyFrames;
@@ -618,13 +617,13 @@ void Optimizer::LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap
                     e->setMeasurement(obs);
                     const float &invSigma2 = pKFi->mvInvLevelSigma2[kpUn.octave];
                     // @nxy 修改信息矩阵
-                    // 原始金字塔模型sigma
-//                    e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
-					// 深度不确定性sigma
-					float mysigma = (int)((*pImDepthUncertImages)[pKFi->mnFrameId].at<uchar>(kpUn.pt)) / 255.0;
-					e->setInformation(Eigen::Matrix2d::Identity() * mysigma);
-					// 固定sigma
-//					e->setInformation(Eigen::Matrix2d::Identity());
+					if(uncertMode==Standard)
+						e->setInformation(Eigen::Matrix2d::Identity()*invSigma2);
+					else if (uncertMode==Same)
+						e->setInformation(Eigen::Matrix2d::Identity());
+					else
+						e->setInformation(Eigen::Matrix2d::Identity()*
+						(int)((*pImDepthUncertImages)[pKFi->mnFrameId].at<uchar>(kpUn.pt)) / uncertFactor);
 
                     g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                     e->setRobustKernel(rk);

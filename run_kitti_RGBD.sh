@@ -1,10 +1,10 @@
-seq=10
+seq=01
 ./Examples/RGB-D/rgbd_kitti \
 Vocabulary/ORBvoc.txt \
-Examples/RGB-D/KITTI.yaml \
+Examples/RGB-D/KITTI00-02.yaml \
 /home/dl/Downloads/kitti_odom_test/sequences/${seq} \
-pred_depths/${seq}_resized/predictions \
-pred_depths/${seq}_resized/uncertainties \
+pred_depths/${seq}/predictions \
+pred_depths/${seq}/uncertainties \
 gt_poses/${seq}_transQuat.txt \
 gt_poses/${seq}_transQuat.txt
 

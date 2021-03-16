@@ -45,8 +45,11 @@ public:
                                  const bool bRobust = true);
     void static GlobalBundleAdjustemnt(Map* pMap, int nIterations=5, bool *pbStopFlag=NULL,
                                        const unsigned long nLoopKF=0, const bool bRobust = true);
-    void static LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages=nullptr);
-    int static PoseOptimization(Frame* pFrame, cv::Mat *pImDepthUncert);
+	// uncertMode：0表示正常，1表示固定不确定性，2表示深度不确定性
+    void static LocalBundleAdjustment(KeyFrame* pKF, bool* pbStopFlag, Map* pMap, vector<cv::Mat>* pImDepthUncertImages=nullptr,
+		int uncertMode=Standard);
+    // uncertMode：0表示正常，1表示固定不确定性，2表示深度不确定性
+    int static PoseOptimization(Frame* pFrame, cv::Mat *pImDepthUncert, int uncertMode=Standard);
 
     // if bFixScale is true, 6DoF optimization (stereo,rgbd), 7DoF otherwise (mono)
     void static OptimizeEssentialGraph(Map* pMap, KeyFrame* pLoopKF, KeyFrame* pCurKF,
@@ -58,6 +61,16 @@ public:
     // if bFixScale is true, optimize SE3 (stereo,rgbd), Sim3 otherwise (mono)
     static int OptimizeSim3(KeyFrame* pKF1, KeyFrame* pKF2, std::vector<MapPoint *> &vpMatches1,
                             g2o::Sim3 &g2oS12, const float th2, const bool bFixScale);
+
+    enum uncertMode
+	{
+    	Standard,
+    	Same,
+    	Uncert
+	};
+
+    // 不确定性缩放因子
+    static const double uncertFactor;
 };
 
 } //namespace ORB_SLAM
